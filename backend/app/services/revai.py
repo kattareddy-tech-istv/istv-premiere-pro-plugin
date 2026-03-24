@@ -1,8 +1,12 @@
 import json
-import httpx
+import logging
+import mimetypes
 from pathlib import Path
 
 from ..config import REV_AI_TOKEN, TRANSCRIPTS_DIR, COMPRESSED_DIR
+from .. import clients
+
+logger = logging.getLogger(__name__)
 
 REV_AI_BASE = "https://api.rev.ai/speechtotext/v1"
 
@@ -27,18 +31,18 @@ async def submit_transcription(file_id: str) -> str:
         raise FileNotFoundError(f"Compressed file '{file_id}' not found")
 
     headers = {"Authorization": f"Bearer {REV_AI_TOKEN.strip()}"}
+    options = json.dumps({"skip_diarization": False, "language": "en"})
 
-    options = json.dumps({
-        "skip_diarization": False,
-        "language": "en",
-    })
+    mime, _ = mimetypes.guess_type(compressed_path.name)
+    if not mime:
+        mime = "application/octet-stream"
 
-    # Rev AI async upload — no client-side timeout; rely on Rev AI / network limits
-    async with httpx.AsyncClient(timeout=None) as client:
+    async with clients.revai_sem:
+        http = clients.get_http()
         with open(compressed_path, "rb") as f:
-            files = {"media": (compressed_path.name, f, "audio/mpeg")}
+            files = {"media": (compressed_path.name, f, mime)}
             data = {"options": options}
-            response = await client.post(
+            response = await http.post(
                 f"{REV_AI_BASE}/jobs",
                 headers=headers,
                 files=files,
@@ -49,6 +53,7 @@ async def submit_transcription(file_id: str) -> str:
         raise RuntimeError(f"Rev AI submit error ({response.status_code}): {response.text[:300]}")
 
     job = response.json()
+    logger.info("Rev AI job submitted: %s", job["id"])
     return job["id"]
 
 
@@ -62,8 +67,9 @@ async def get_job_status(job_id: str) -> dict:
 
     headers = {"Authorization": f"Bearer {REV_AI_TOKEN.strip()}"}
 
-    async with httpx.AsyncClient(timeout=None) as client:
-        response = await client.get(f"{REV_AI_BASE}/jobs/{job_id}", headers=headers)
+    async with clients.revai_sem:
+        http = clients.get_http()
+        response = await http.get(f"{REV_AI_BASE}/jobs/{job_id}", headers=headers)
 
     if response.status_code != 200:
         raise RuntimeError(f"Rev AI status error: {response.text[:300]}")
@@ -78,8 +84,9 @@ async def get_transcript(job_id: str) -> dict:
         "Accept": "application/vnd.rev.transcript.v1.0+json",
     }
 
-    async with httpx.AsyncClient(timeout=None) as client:
-        response = await client.get(
+    async with clients.revai_sem:
+        http = clients.get_http()
+        response = await http.get(
             f"{REV_AI_BASE}/jobs/{job_id}/transcript",
             headers=headers,
         )
@@ -113,7 +120,6 @@ async def get_transcript(job_id: str) -> dict:
 
             elif element["type"] == "punct":
                 current["text"] += element["value"]
-                # Sentence boundary
                 if element["value"] in (".", "!", "?"):
                     if current["text"].strip():
                         sentences.append({
@@ -126,7 +132,6 @@ async def get_transcript(job_id: str) -> dict:
                         })
                     current = {"text": "", "words": [], "speaker": None, "start": None, "end": None}
 
-    # Flush remaining
     if current["text"].strip():
         sentences.append({
             "text": current["text"].strip(),
@@ -137,7 +142,6 @@ async def get_transcript(job_id: str) -> dict:
             "words": current["words"],
         })
 
-    # ── Unique speakers ──────────────────────────────────────────────────
     seen = set()
     speakers = []
     for s in sentences:
@@ -157,7 +161,6 @@ async def get_transcript(job_id: str) -> dict:
         "word_count": word_count,
     }
 
-    # Cache to disk
     transcript_path = TRANSCRIPTS_DIR / f"{job_id}.json"
     with open(transcript_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)

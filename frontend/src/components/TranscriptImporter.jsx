@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { importTranscript } from "../utils/api";
 
-export default function TranscriptImporter({ onImportComplete, disabled }) {
+export default function TranscriptImporter({ onImportComplete, disabled, title = "01 — Import Transcript", tag = "SKIP TO REVIEW" }) {
   const [jsonText, setJsonText] = useState("");
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -299,9 +299,9 @@ export default function TranscriptImporter({ onImportComplete, disabled }) {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <h3 style={{ color: "var(--gold)", fontSize: 16, fontWeight: 600 }}>
-          01 — Import Transcript
+          {title}
         </h3>
-        <span className="tag tag-gold">SKIP TO REVIEW</span>
+        <span className="tag tag-gold">{tag}</span>
       </div>
 
       {/* Instructions */}

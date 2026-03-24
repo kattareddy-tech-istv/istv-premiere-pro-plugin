@@ -1,0 +1,37 @@
+[
+  {
+    "user": 4,
+    "step": "export_xml",
+    "ms": 91.19960002135485,
+    "ok": true,
+    "status": 200
+  },
+  {
+    "user": 2,
+    "step": "export_xml",
+    "ms": 91.84330003336072,
+    "ok": true,
+    "status": 200
+  },
+  {
+    "user": 3,
+    "step": "export_xml",
+    "ms": 91.89559996593744,
+    "ok": true,
+    "status": 200
+  },
+  {
+    "user": 1,
+    "step": "export_xml",
+    "ms": 92.6864999346435,
+    "ok": true,
+    "status": 200
+  },
+  {
+    "user": 0,
+    "step": "export_xml",
+    "ms": 100.26069998275489,
+    "ok": true,
+    "status": 200
+  }
+]

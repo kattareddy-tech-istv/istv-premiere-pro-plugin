@@ -3,9 +3,14 @@ import json
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from ..config import TRANSCRIPTS_DIR, CUTSHEETS_DIR
-from ..models import CutSheetRequest
-from ..services.ai import generate_cutsheet, PRICING, DEFAULT_CUTSHEET_PROMPT
+from ..config import TRANSCRIPTS_DIR, CUTSHEETS_DIR, PREMIERE_XMLS_DIR
+from ..models import CutSheetRequest, PremiereExportRequest
+from ..services.ai import generate_cutsheet, PRICING, load_cutsheet_prompt
+from ..services.premiere_xml import (
+    generate_premiere_xml,
+    get_parsed_clips_summary,
+)
+from ..services.premiere_xml_parser import load_parsed_xml
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
@@ -49,7 +54,7 @@ async def get_pricing():
 
 @router.get("/default-prompt")
 async def get_default_prompt():
-    return {"prompt": DEFAULT_CUTSHEET_PROMPT}
+    return {"prompt": load_cutsheet_prompt()}
 
 
 # ── Cut sheet generation ─────────────────────────────────────────────────────
@@ -134,4 +139,69 @@ async def download_cutsheet(cutsheet_id: str, format: str = "json"):
         cutsheet_path,
         media_type="application/json",
         filename=f"cutsheet_{cutsheet_id}.json",
+    )
+
+
+# ── Premiere Pro XML Export ──────────────────────────────────────────────────
+
+@router.get("/premiere-preview/{cutsheet_id}")
+async def premiere_preview(cutsheet_id: str):
+    """Return a JSON summary of clips that would appear in the Premiere XML."""
+    cutsheet_path = CUTSHEETS_DIR / f"{cutsheet_id}.json"
+    if not cutsheet_path.exists():
+        raise HTTPException(404, "Cut sheet not found")
+
+    with open(cutsheet_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    try:
+        summary = get_parsed_clips_summary(data["cutsheet"])
+    except Exception as e:
+        raise HTTPException(422, f"Failed to parse cut sheet: {e}")
+
+    return summary
+
+
+@router.post("/export-xml/{cutsheet_id}")
+async def export_premiere_xml(cutsheet_id: str, settings: PremiereExportRequest):
+    """Generate and download an FCP XML file for Premiere Pro import."""
+    cutsheet_path = CUTSHEETS_DIR / f"{cutsheet_id}.json"
+    if not cutsheet_path.exists():
+        raise HTTPException(404, "Cut sheet not found")
+
+    with open(cutsheet_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    # Load real source files from editor's Premiere XML if provided
+    source_files = None
+    if settings.premiere_xml_id:
+        source_files = load_parsed_xml(settings.premiere_xml_id, PREMIERE_XMLS_DIR)
+        if source_files is None:
+            raise HTTPException(404, "Premiere XML metadata not found. Re-upload the XML file.")
+
+    try:
+        xml_str = generate_premiere_xml(
+            cutsheet_text=data["cutsheet"],
+            sequence_name=settings.sequence_name or "AI Cut Sheet Assembly",
+            timebase=settings.timebase,
+            width=settings.width,
+            height=settings.height,
+            source_file_name=settings.source_file_name or "Interview_Footage",
+            ntsc=settings.ntsc,
+            vo_gap_seconds=settings.vo_gap_seconds,
+            source_files=source_files,
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"XML generation error: {e}")
+
+    xml_path = CUTSHEETS_DIR / f"{cutsheet_id}_premiere.xml"
+    with open(xml_path, "w", encoding="utf-8") as f:
+        f.write(xml_str)
+
+    return FileResponse(
+        xml_path,
+        media_type="application/xml",
+        filename=f"{cutsheet_id}_premiere.xml",
     )

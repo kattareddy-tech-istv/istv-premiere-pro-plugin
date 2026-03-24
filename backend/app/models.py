@@ -84,3 +84,16 @@ class CutSheetResponse(BaseModel):
     input_tokens: int
     output_tokens: int
     cost_usd: float
+
+
+# ── Premiere Pro XML Export ──────────────────────────────────────────────────
+
+class PremiereExportRequest(BaseModel):
+    sequence_name: Optional[str] = "AI Cut Sheet Assembly"
+    timebase: int = 25
+    width: int = 1920
+    height: int = 1080
+    source_file_name: Optional[str] = "Interview_Footage"
+    ntsc: bool = False
+    vo_gap_seconds: float = 5.0
+    premiere_xml_id: Optional[str] = None

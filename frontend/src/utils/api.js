@@ -1,11 +1,34 @@
-// Backend URL: from .env (VITE_API_URL) or default localhost:8000. Requests go to the backend directly.
+// Backend URL: from .env (VITE_API_URL) or a sensible local default.
+// Dev note: when we run the frontend on 3001, we typically run the backend on 8001.
+const DEFAULT_LOCAL_BACKEND = (() => {
+  if (typeof window === "undefined") return "http://localhost:8000";
+  const port = window.location?.port;
+  return port === "3001" ? "http://127.0.0.1:8001" : "http://localhost:8000";
+})();
+
 const API_BASE =
   typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL
     ? import.meta.env.VITE_API_URL.replace(/\/$/, "")
-    : "http://localhost:8000";
+    : DEFAULT_LOCAL_BACKEND;
 const API = `${API_BASE}/api`;
 
+// Hardcoded at build time — compared against backend /api/health version
+export const FRONTEND_VERSION = "2.1.0";
+
+export async function checkBackendVersion() {
+  try {
+    const r = await fetch(`${API}/health`);
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.version || null;
+  } catch {
+    return null;
+  }
+}
+
 // ── Direct File Upload (with progress) ──────────────────────────────────────
+
+const UPLOAD_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 export async function uploadFile(file, onProgress) {
   return new Promise((resolve, reject) => {
@@ -13,6 +36,7 @@ export async function uploadFile(file, onProgress) {
     form.append("file", file);
 
     const xhr = new XMLHttpRequest();
+    xhr.timeout = UPLOAD_TIMEOUT_MS;
     xhr.open("POST", `${API}/upload`);
 
     xhr.upload.onprogress = (event) => {
@@ -45,6 +69,10 @@ export async function uploadFile(file, onProgress) {
 
     xhr.onerror = () => {
       reject(new Error("Network error during upload"));
+    };
+
+    xhr.ontimeout = () => {
+      reject(new Error("Upload timed out (30 min limit). Try a smaller file or check your connection."));
     };
 
     xhr.send(form);
@@ -131,6 +159,123 @@ export async function getDefaultPrompt() {
   if (!r.ok) throw new Error("Failed to fetch prompt");
   return r.json();
 }
+
+/** Defaults for auto cut-sheet generation (mirrors ModelSelector init). */
+export async function getCutSheetAutoDefaults() {
+  try {
+    const [models, promptRes] = await Promise.all([getModels(), getDefaultPrompt()]);
+    const anth = models?.anthropic?.models;
+    let modelId = "claude-opus-4-6";
+    if (anth && anth.length > 0) {
+      const rec = anth.find((m) => m.recommended);
+      modelId = rec?.id || anth[0].id;
+    }
+    return {
+      provider: "anthropic",
+      model: modelId,
+      prompt: promptRes?.prompt ?? "",
+    };
+  } catch {
+    return { provider: "anthropic", model: "claude-opus-4-6", prompt: "" };
+  }
+}
+
+// ── B-Roll Suggestions ───────────────────────────────────────────────────
+
+export async function generateBRoll({ transcriptJobId, provider, model, verifyPexels = true, customPrompt }) {
+  let r;
+  try {
+    r = await fetch(`${API}/broll/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        transcript_job_id: String(transcriptJobId),
+        provider: provider || "anthropic",
+        model: model || "claude-opus-4-6",
+        verify_pexels: verifyPexels,
+        custom_prompt: customPrompt || undefined,
+      }),
+    });
+  } catch (err) {
+    throw new Error(err.message || "Network error during B-roll generation");
+  }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    throw new Error(data.detail || "B-roll generation failed");
+  }
+  return data;
+}
+
+export async function getCachedBRoll(jobId) {
+  const r = await fetch(`${API}/broll/${jobId}`);
+  if (!r.ok) return null;
+  return r.json();
+}
+
+export async function searchPexels(query, perPage = 5) {
+  const r = await fetch(`${API}/broll/search-pexels`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, per_page: perPage }),
+  });
+  if (!r.ok) return { available: false, results: [] };
+  return r.json();
+}
+
+export async function getBRollPrompt() {
+  const r = await fetch(`${API}/broll/prompt`);
+  if (!r.ok) throw new Error("Failed to fetch B-roll prompt");
+  return r.json();
+}
+
+// ── Premiere Pro XML Round-Trip ──────────────────────────────────────────
+
+export async function uploadPremiereXML(file) {
+  const form = new FormData();
+  form.append("file", file);
+  const r = await fetch(`${API}/upload/premiere-xml`, { method: "POST", body: form });
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.detail || "Premiere XML upload failed");
+  }
+  return r.json();
+}
+
+export async function getPremierePreview(cutsheetId) {
+  const r = await fetch(`${API}/generate/premiere-preview/${cutsheetId}`);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || "Preview failed");
+  return r.json();
+}
+
+export async function exportPremiereXML(cutsheetId, settings = {}) {
+  const r = await fetch(`${API}/generate/export-xml/${cutsheetId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sequence_name: settings.sequenceName || "AI Cut Sheet Assembly",
+      timebase: settings.timebase || 25,
+      width: settings.width || 1920,
+      height: settings.height || 1080,
+      source_file_name: settings.sourceFileName || "Interview_Footage",
+      ntsc: settings.ntsc || false,
+      vo_gap_seconds: settings.voGapSeconds ?? 5.0,
+      premiere_xml_id: settings.premiereXmlId || null,
+    }),
+  });
+  if (!r.ok) {
+    const data = await r.json().catch(() => ({}));
+    throw new Error(data.detail || "XML export failed");
+  }
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${cutsheetId}_premiere.xml`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── AI Generation ───────────────────────────────────────────────────────
 
 export async function generateCutSheet({ transcriptJobId, provider, model, prompt }) {
   let r;

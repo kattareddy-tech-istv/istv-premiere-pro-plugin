@@ -1,6 +1,67 @@
+import { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
+import { getPremierePreview, exportPremiereXML } from "../utils/api";
+import { notifyPipelineStep } from "../utils/notifications";
 
-export default function CutSheetViewer({ cutsheet, onReset }) {
+const FRAME_RATES = [
+  { value: 24, label: "24 fps (Film)" },
+  { value: 25, label: "25 fps (PAL)" },
+  { value: 30, label: "29.97 fps (NTSC)", ntsc: true, actual: 30 },
+  { value: 30, label: "30 fps", ntsc: false },
+];
+
+const RESOLUTIONS = [
+  { w: 1920, h: 1080, label: "1920 x 1080 (Full HD)" },
+  { w: 3840, h: 2160, label: "3840 x 2160 (4K UHD)" },
+  { w: 1280, h: 720, label: "1280 x 720 (HD)" },
+];
+
+function fmtSec(s) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}m ${sec}s`;
+}
+
+function findFrameRateIdx(timebase, ntsc) {
+  const idx = FRAME_RATES.findIndex(
+    (fr) => (fr.actual || fr.value) === timebase && !!fr.ntsc === !!ntsc
+  );
+  return idx >= 0 ? idx : 0;
+}
+
+function findResIdx(w, h) {
+  const idx = RESOLUTIONS.findIndex((r) => r.w === w && r.h === h);
+  return idx >= 0 ? idx : 0;
+}
+
+export default function CutSheetViewer({ cutsheet, onReset, premiereXmlData }) {
+  const hasRealXml = !!(premiereXmlData && premiereXmlData.premiere_xml_id);
+
+  const [xmlPanel, setXmlPanel] = useState(false);
+  const [xmlSettings, setXmlSettings] = useState({
+    sequenceName: "AI Cut Sheet Assembly",
+    frameRateIdx: 0,
+    resIdx: 0,
+    sourceFileName: "Interview_Footage",
+    voGapSeconds: 5,
+  });
+  const [preview, setPreview] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [xmlError, setXmlError] = useState(null);
+
+  // Auto-populate settings from parsed Premiere XML
+  useEffect(() => {
+    if (hasRealXml) {
+      setXmlSettings((prev) => ({
+        ...prev,
+        sequenceName: `AI Assembly — ${premiereXmlData.sequence_name || "Untitled"}`,
+        frameRateIdx: findFrameRateIdx(premiereXmlData.timebase, premiereXmlData.ntsc),
+        resIdx: findResIdx(premiereXmlData.width, premiereXmlData.height),
+      }));
+    }
+  }, [hasRealXml, premiereXmlData]);
+
   if (!cutsheet) return null;
 
   const handleDownloadJSON = () => {
@@ -31,6 +92,64 @@ export default function CutSheetViewer({ cutsheet, onReset }) {
     a.download = `cutsheet_${cutsheet.cutsheet_id || "export"}.txt`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handlePreview = async () => {
+    if (!cutsheet.cutsheet_id) return;
+    setPreviewLoading(true);
+    setXmlError(null);
+    try {
+      const data = await getPremierePreview(cutsheet.cutsheet_id);
+      setPreview(data);
+    } catch (err) {
+      setXmlError(err.message);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleExportXML = async () => {
+    if (!cutsheet.cutsheet_id) return;
+    setExporting(true);
+    setXmlError(null);
+    const fr = FRAME_RATES[xmlSettings.frameRateIdx];
+    const res = RESOLUTIONS[xmlSettings.resIdx];
+    try {
+      await exportPremiereXML(cutsheet.cutsheet_id, {
+        sequenceName: xmlSettings.sequenceName,
+        timebase: fr.actual || fr.value,
+        width: res.w,
+        height: res.h,
+        sourceFileName: xmlSettings.sourceFileName,
+        ntsc: !!fr.ntsc,
+        voGapSeconds: xmlSettings.voGapSeconds,
+        premiereXmlId: hasRealXml ? premiereXmlData.premiere_xml_id : null,
+      });
+      notifyPipelineStep("Premiere XML exported", "FCP XML download started — import it in Premiere Pro.");
+    } catch (err) {
+      setXmlError(err.message);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const inputStyle = {
+    width: "100%",
+    padding: "8px 12px",
+    background: "var(--bg-primary)",
+    border: "1px solid var(--border-color)",
+    borderRadius: 6,
+    color: "var(--text-primary)",
+    fontSize: 13,
+  };
+
+  const labelStyle = {
+    fontSize: 11,
+    color: "var(--text-muted)",
+    textTransform: "uppercase",
+    letterSpacing: "0.5px",
+    marginBottom: 4,
+    display: "block",
   };
 
   return (
@@ -88,6 +207,252 @@ export default function CutSheetViewer({ cutsheet, onReset }) {
         <div className="cutsheet-content">
           <ReactMarkdown>{cutsheet.cutsheet}</ReactMarkdown>
         </div>
+      </div>
+
+      {/* ── Premiere Pro XML Export Panel ─────────────────────────────────── */}
+      <div
+        style={{
+          marginBottom: 20,
+          border: xmlPanel ? "1px solid var(--gold)" : "1px solid var(--border-color)",
+          borderRadius: 10,
+          overflow: "hidden",
+          transition: "border-color 0.2s",
+        }}
+      >
+        <button
+          onClick={() => { setXmlPanel(!xmlPanel); if (!xmlPanel && !preview) handlePreview(); }}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "14px 18px",
+            background: xmlPanel ? "rgba(212,175,55,0.08)" : "var(--bg-secondary)",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--gold)",
+            fontSize: 14,
+            fontWeight: 600,
+            transition: "background 0.2s",
+          }}
+        >
+          <span>
+            Premiere Pro XML Export
+            {hasRealXml && (
+              <span style={{ fontSize: 11, marginLeft: 8, opacity: 0.7, fontWeight: 400 }}>
+                (linked to {premiereXmlData.sequence_name})
+              </span>
+            )}
+          </span>
+          <span style={{ fontSize: 12, opacity: 0.7 }}>{xmlPanel ? "\u25B2" : "\u25BC"}</span>
+        </button>
+
+        {xmlPanel && (
+          <div style={{ padding: "18px", background: "var(--bg-secondary)" }}>
+
+            {/* Source XML badge */}
+            {hasRealXml && (
+              <div
+                style={{
+                  padding: "10px 14px",
+                  background: "rgba(74,222,128,0.06)",
+                  border: "1px solid rgba(74,222,128,0.25)",
+                  borderRadius: 8,
+                  marginBottom: 14,
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  color: "var(--text-muted)",
+                }}
+              >
+                <strong style={{ color: "var(--success)" }}>Source XML linked</strong>
+                {" — "}Real file paths from your synced master timeline will be used.
+                Both cameras appear on every interview pull. No relinking needed in Premiere.
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                  {premiereXmlData.tracks.map((t, i) => (
+                    <span
+                      key={i}
+                      style={{
+                        background: "var(--bg-primary)",
+                        borderRadius: 4,
+                        padding: "3px 8px",
+                        fontSize: 11,
+                      }}
+                    >
+                      <strong style={{ color: "var(--gold)" }}>{t.label}:</strong>{" "}
+                      <span style={{ color: "var(--text-primary)" }}>{t.file_name}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Preview summary */}
+            {previewLoading && (
+              <p style={{ color: "var(--text-muted)", fontSize: 13, marginBottom: 12 }}>
+                <span className="spinner" style={{ marginRight: 8, verticalAlign: "middle" }} />
+                Analyzing cut sheet...
+              </p>
+            )}
+
+            {preview && !previewLoading && (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 12 }}>
+                  {[
+                    { label: "Interview Pulls", value: preview.total_clips, color: "var(--gold)" },
+                    { label: "Alt Takes", value: preview.total_alts },
+                    { label: "VO Segments", value: preview.total_vos },
+                    { label: "Est. Runtime", value: fmtSec(preview.estimated_runtime_seconds), color: "var(--success)" },
+                  ].map((s) => (
+                    <div
+                      key={s.label}
+                      style={{
+                        background: "var(--bg-primary)",
+                        borderRadius: 6,
+                        padding: "8px 10px",
+                        textAlign: "center",
+                      }}
+                    >
+                      <p style={{ fontSize: 9, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 2 }}>
+                        {s.label}
+                      </p>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: s.color || "var(--text-primary)" }}>{s.value}</p>
+                    </div>
+                  ))}
+                </div>
+                <p style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.5 }}>
+                  {preview.sections.length} sections detected: {preview.sections.slice(0, 6).join(", ")}
+                  {preview.sections.length > 6 ? `, +${preview.sections.length - 6} more` : ""}
+                </p>
+              </div>
+            )}
+
+            {/* Settings grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+              <div>
+                <label style={labelStyle}>Sequence Name</label>
+                <input
+                  type="text"
+                  value={xmlSettings.sequenceName}
+                  onChange={(e) => setXmlSettings({ ...xmlSettings, sequenceName: e.target.value })}
+                  style={inputStyle}
+                />
+              </div>
+              {!hasRealXml && (
+                <div>
+                  <label style={labelStyle}>Source File Name</label>
+                  <input
+                    type="text"
+                    value={xmlSettings.sourceFileName}
+                    onChange={(e) => setXmlSettings({ ...xmlSettings, sourceFileName: e.target.value })}
+                    placeholder="Interview_Footage"
+                    style={inputStyle}
+                  />
+                </div>
+              )}
+              <div>
+                <label style={labelStyle}>Frame Rate{hasRealXml ? " (from XML)" : ""}</label>
+                <select
+                  value={xmlSettings.frameRateIdx}
+                  onChange={(e) => setXmlSettings({ ...xmlSettings, frameRateIdx: Number(e.target.value) })}
+                  style={inputStyle}
+                  disabled={hasRealXml}
+                >
+                  {FRAME_RATES.map((fr, i) => (
+                    <option key={i} value={i}>{fr.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Resolution{hasRealXml ? " (from XML)" : ""}</label>
+                <select
+                  value={xmlSettings.resIdx}
+                  onChange={(e) => setXmlSettings({ ...xmlSettings, resIdx: Number(e.target.value) })}
+                  style={inputStyle}
+                  disabled={hasRealXml}
+                >
+                  {RESOLUTIONS.map((r, i) => (
+                    <option key={i} value={i}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>VO Gap Duration (seconds)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  step={0.5}
+                  value={xmlSettings.voGapSeconds}
+                  onChange={(e) => setXmlSettings({ ...xmlSettings, voGapSeconds: Number(e.target.value) || 5 })}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            {/* Info box */}
+            <div
+              style={{
+                padding: "12px 14px",
+                background: "rgba(212,175,55,0.06)",
+                border: "1px solid rgba(212,175,55,0.15)",
+                borderRadius: 8,
+                marginBottom: 14,
+                fontSize: 12,
+                lineHeight: 1.6,
+                color: "var(--text-muted)",
+              }}
+            >
+              {hasRealXml ? (
+                <>
+                  <strong style={{ color: "var(--gold)" }}>Track layout:</strong>{" "}
+                  <strong>V1</strong> Camera A IPs, <strong>V2</strong> Camera B IPs (same timecodes),{" "}
+                  <strong>V3</strong> Camera A ALTs, <strong>V4</strong> Camera B ALTs.
+                  Audio tracks A1–A4 mirror the video. Section titles, VO scripts, and B-roll
+                  notes appear as <strong>sequence markers</strong>.
+                </>
+              ) : (
+                <>
+                  <strong style={{ color: "var(--gold)" }}>How it works:</strong> The XML
+                  places every interview pull on <strong>V1</strong> in story order with correct
+                  source in/out timecodes. Alt takes go on <strong>V3</strong>. VO narration
+                  scripts and B-roll notes appear as <strong>sequence markers</strong>. Import
+                  the XML into Premiere Pro, relink to your source footage, and the timeline
+                  assembles automatically.
+                </>
+              )}
+            </div>
+
+            {xmlError && (
+              <div style={{
+                padding: "10px 14px",
+                background: "rgba(239,68,68,0.06)",
+                border: "1px solid rgba(239,68,68,0.25)",
+                borderRadius: 8,
+                marginBottom: 14,
+              }}>
+                <p style={{ color: "var(--error)", fontSize: 12, fontWeight: 500 }}>{xmlError}</p>
+              </div>
+            )}
+
+            <button
+              className="btn btn-gold"
+              onClick={handleExportXML}
+              disabled={exporting || !cutsheet.cutsheet_id}
+              style={{ width: "100%" }}
+            >
+              {exporting ? (
+                <>
+                  <span className="spinner" style={{ marginRight: 8, verticalAlign: "middle" }} />
+                  Generating XML...
+                </>
+              ) : hasRealXml ? (
+                "Export Premiere Pro XML (Auto-Linked)"
+              ) : (
+                "Export Premiere Pro XML"
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Actions */}

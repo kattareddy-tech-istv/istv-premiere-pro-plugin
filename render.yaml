@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: inside-success-tv-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: standard
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATA_DIR
+        value: /data
+      - key: REV_AI_TOKEN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PEXELS_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: MAX_CONCURRENT_FFMPEG
+        value: "3"
+      - key: MAX_CONCURRENT_REVAI
+        value: "4"
+      - key: MAX_CONCURRENT_AI
+        value: "6"
+      - key: FILE_MAX_AGE_HOURS
+        value: "24"
+      - key: APP_VERSION
+        value: "2.1.0"
+      - key: COMPRESS_AUDIO_ABOVE_MB
+        value: "200"
+      - key: FFMPEG_TIMEOUT_SECONDS
+        value: "1800"
+    disk:
+      name: pipeline-data
+      mountPath: /data
+      sizeGB: 10

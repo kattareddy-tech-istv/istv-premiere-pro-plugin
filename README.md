@@ -66,7 +66,39 @@ Open **http://localhost:3000**
 
 ---
 
-## Docker (Production)
+## Deployment (Vercel + Render recommended)
+
+### Frontend on Vercel
+
+1. Create a Vercel project from this repo using **`frontend`** as the root directory.
+2. Set env var:
+
+```bash
+VITE_API_URL=https://your-render-backend.onrender.com
+```
+
+3. Build settings:
+   - Framework preset: **Vite**
+   - Build command: `npm run build`
+   - Output directory: `dist`
+
+`frontend/vercel.json` already includes SPA rewrite to `index.html`.
+
+### Backend on Render
+
+Use included `render.yaml` (Blueprint deploy). It provisions:
+- Docker web service from `backend/Dockerfile`
+- Persistent disk mounted at `/data`
+- Health check at `/api/health`
+- Required env keys (set secure values in Render dashboard)
+
+Important backend env vars:
+- `REV_AI_TOKEN`
+- `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GEMINI_API_KEY`
+- `CORS_ORIGINS=https://your-vercel-domain.vercel.app`
+- `COMPRESS_AUDIO_ABOVE_MB=200` (threshold for when FFmpeg runs)
+
+### Alternative: Local Docker Compose
 
 ```bash
 docker-compose up --build
@@ -80,7 +112,7 @@ docker-compose up --build
 ## Pipeline Flow
 
 1. **Upload** — Chunked upload (10 MB chunks) handles files up to 2 GB
-2. **Compress** — FFmpeg converts to mono 16 kHz MP3 at 64 kbps (~20-50x reduction)
+2. **Prepare Audio** — If upload is above `COMPRESS_AUDIO_ABOVE_MB` (default 200 MB), FFmpeg converts to mono 16 kHz MP3 at 64 kbps; otherwise upload is passed through as-is
 3. **Transcribe** — Rev AI async transcription with speaker diarization
 4. **Review** — Sentence-by-sentence timestamped transcript with speaker labels
 5. **Generate** — AI model generates editor cut sheet from transcript

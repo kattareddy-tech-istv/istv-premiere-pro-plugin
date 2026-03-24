@@ -16,3 +16,6 @@ __pycache__/
 
 *.log
 
+# Local large audio for manual/load tests (exceeds GitHub 100 MB limit)
+testaudiofile/
+

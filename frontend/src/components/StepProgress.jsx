@@ -1,90 +1,66 @@
-const STEPS = [
-  { id: "upload", label: "Upload", icon: "↑" },
-  { id: "compress", label: "Compress", icon: "◆" },
-  { id: "transcribe", label: "Transcribe", icon: "¶" },
-  { id: "review", label: "Review", icon: "◎" },
-  { id: "generate", label: "Cut Sheet", icon: "✂" },
-  { id: "complete", label: "Done", icon: "✓" },
+const CUTSHEET_STEPS = [
+  { id: "upload", label: "Upload", icon: "\u2191" },
+  { id: "compress", label: "Compress", icon: "\u25C6" },
+  { id: "transcribe", label: "Transcribe", icon: "\u00B6" },
+  { id: "review", label: "Review", icon: "\u25CE" },
+  { id: "generate", label: "Cut Sheet", icon: "\u2702" },
+  { id: "complete", label: "Done", icon: "\u2713" },
 ];
 
-export default function StepProgress({ currentStep, completedSteps, onStepClick }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "16px 0 24px",
-      }}
-    >
-      {STEPS.map((step, i) => {
-        const done = completedSteps.includes(step.id);
-        const active = step.id === currentStep;
-        const clickable = typeof onStepClick === "function";
+const BROLL_STEPS = [
+  { id: "upload", label: "Upload", icon: "\u2191" },
+  { id: "compress", label: "Compress", icon: "\u25C6" },
+  { id: "transcribe", label: "Transcribe", icon: "\u00B6" },
+  { id: "review", label: "Review", icon: "\u25CE" },
+  { id: "broll_generate", label: "B-Roll", icon: "\u266A" },
+  { id: "broll_complete", label: "Done", icon: "\u2713" },
+];
 
-        return (
-          <div key={step.id} style={{ display: "flex", alignItems: "center" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
-              <button
-                type="button"
-                onClick={clickable ? () => onStepClick(step.id) : undefined}
-                style={{
-                  width: 34,
-                  height: 34,
-                  borderRadius: "50%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  border: `2px solid ${
-                    done ? "var(--success)" : active ? "var(--gold)" : "var(--border-color)"
-                  }`,
-                  background: done
-                    ? "var(--success)"
-                    : active
-                    ? "var(--gold-glow-soft)"
-                    : "transparent",
-                  color: done
-                    ? "#0a0a0a"
-                    : active
-                    ? "var(--gold)"
-                    : "var(--text-muted)",
-                  transition: "all 0.35s ease",
-                  cursor: clickable ? "pointer" : "default",
-                  outline: "none",
-                }}
-              >
-                {done ? "✓" : step.icon}
-              </button>
-              <span
-                style={{
-                  fontSize: 9,
-                  fontWeight: 600,
-                  color: active ? "var(--gold)" : done ? "var(--success)" : "var(--text-muted)",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.6px",
-                }}
-              >
-                {step.label}
-              </span>
+export default function StepProgress({ currentStep, completedSteps, onStepClick, pipeline, navigationDisabled }) {
+  const STEPS = pipeline === "broll" ? BROLL_STEPS : CUTSHEET_STEPS;
+  const clickable = typeof onStepClick === "function" && !navigationDisabled;
+
+  return (
+    <div className="pipeline-rail fade-in">
+      <div className="pipeline-rail__scroll">
+        {STEPS.map((step, i) => {
+          const done = completedSteps.includes(step.id);
+          const active = step.id === currentStep;
+          const showAsActive = active;
+          const connectorDone = done && i < STEPS.length - 1;
+
+          return (
+            <div key={step.id} className="pipeline-rail__segment">
+              <div className="pipeline-rail__nodeCol">
+                <button
+                  type="button"
+                  title={navigationDisabled ? "Wait for the current task to finish" : `Open ${step.label}`}
+                  onClick={() => {
+                    if (!clickable) return;
+                    onStepClick(step.id);
+                  }}
+                  disabled={!clickable}
+                  className={`pipeline-node ${showAsActive ? "pipeline-node--active" : ""} ${done ? "pipeline-node--done" : ""} ${!clickable ? "pipeline-node--locked" : ""}`}
+                >
+                  <span className="pipeline-node__ring" aria-hidden />
+                  <span className="pipeline-node__inner">{done && !active ? "\u2713" : step.icon}</span>
+                </button>
+                <span
+                  className={`pipeline-node__label ${showAsActive ? "pipeline-node__label--active" : ""} ${done ? "pipeline-node__label--done" : ""}`}
+                >
+                  {step.label}
+                </span>
+              </div>
+              {i < STEPS.length - 1 && (
+                <div
+                  className={`pipeline-rail__connector ${connectorDone ? "pipeline-rail__connector--done" : ""}`}
+                  aria-hidden
+                />
+              )}
             </div>
-            {i < STEPS.length - 1 && (
-              <div
-                style={{
-                  width: 32,
-                  height: 2,
-                  background: done ? "var(--success)" : "var(--border-color)",
-                  margin: "0 6px",
-                  marginBottom: 18,
-                  transition: "background 0.35s ease",
-                }}
-              />
-            )}
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
     </div>
   );
 }
-

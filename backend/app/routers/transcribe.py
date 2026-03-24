@@ -2,14 +2,14 @@ import json
 import logging
 import traceback
 import uuid
-from typing import List, Dict, Any
+from typing import List, Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..config import TRANSCRIPTS_DIR
-from ..services.audio import compress_audio
+from ..services.audio import prepare_audio_for_transcription
 from ..services.revai import submit_transcription, get_job_status, get_transcript
 
 logger = logging.getLogger(__name__)
@@ -17,8 +17,8 @@ router = APIRouter(prefix="/api/transcribe", tags=["transcribe"])
 
 
 class ImportTranscriptRequest(BaseModel):
-    """Transcript import: array of { speaker, text, start_ts, end_ts }. Large arrays supported."""
-    transcript: List[Dict[str, Any]]
+    """Transcript import: array of dicts or plain strings. Large arrays supported."""
+    transcript: List[Any]
 
 
 def _human_size(size_bytes: int | float) -> str:
@@ -33,9 +33,12 @@ def _human_size(size_bytes: int | float) -> str:
 
 @router.post("/compress/{file_id}")
 async def compress(file_id: str):
-    """Compress uploaded audio via FFmpeg (mono 16 kHz 64 kbps MP3)."""
+    """
+    Prepare audio for Rev: FFmpeg transcode if upload is larger than COMPRESS_AUDIO_ABOVE_MB;
+    otherwise copy file as-is (faster for typical MP3s under the limit).
+    """
     try:
-        result = await compress_audio(file_id)
+        result = await prepare_audio_for_transcription(file_id)
         return result
     except FileNotFoundError as e:
         raise HTTPException(404, f"Upload '{file_id}' not found: {e}")
@@ -127,12 +130,15 @@ async def import_transcript(request: ImportTranscriptRequest):
         seen_speakers = set()
         
         for idx, item in enumerate(raw_transcript):
+            # Allow plain strings → treat as { "text": item }
+            if isinstance(item, str):
+                item = {"text": item.strip(), "speaker": 0, "start_ts": idx * 5.0, "end_ts": (idx + 1) * 5.0}
             if not isinstance(item, dict):
-                raise HTTPException(400, f"Item at index {idx} must be an object/dictionary")
+                raise HTTPException(400, f"Item at index {idx} must be an object/dictionary or string")
             
-            # Get fields with fallbacks
-            raw_speaker = item.get("speaker", 0)
-            text = item.get("text", "")
+            # Get fields with fallbacks (support various formats)
+            raw_speaker = item.get("speaker") or item.get("speaker_id") or 0
+            text = item.get("text") or item.get("content") or item.get("value") or item.get("dialogue") or ""
             
             # Normalize speaker_id to int (JSON may send int or string)
             try:

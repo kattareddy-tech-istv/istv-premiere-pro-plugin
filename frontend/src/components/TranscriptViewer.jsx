@@ -13,7 +13,7 @@ function fmtTime(sec) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${s.padStart(5, "0")}`;
 }
 
-export default function TranscriptViewer({ transcript, jobId, onContinue }) {
+export default function TranscriptViewer({ transcript, jobId, onContinue, continueLabel = "Continue to Cut Sheet →" }) {
   const [filter, setFilter] = useState("all");
 
   if (!transcript) return null;
@@ -156,7 +156,7 @@ export default function TranscriptViewer({ transcript, jobId, onContinue }) {
           Download Transcript (JSON)
         </button>
         <button className="btn btn-gold" onClick={onContinue} style={{ marginLeft: "auto" }}>
-          Continue to Cut Sheet →
+          {continueLabel}
         </button>
       </div>
     </div>
