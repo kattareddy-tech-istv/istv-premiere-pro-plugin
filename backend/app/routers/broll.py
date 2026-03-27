@@ -2,6 +2,8 @@ import json
 import logging
 import traceback
 
+import aiofiles
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -61,8 +63,8 @@ async def get_broll(job_id: str):
     broll_path = BROLL_DIR / f"{job_id}_broll.json"
     if not broll_path.exists():
         raise HTTPException(404, "B-roll suggestions not found")
-    with open(broll_path, encoding="utf-8") as f:
-        return json.load(f)
+    async with aiofiles.open(broll_path, encoding="utf-8") as f:
+        return json.loads(await f.read())
 
 
 @router.post("/search-pexels")

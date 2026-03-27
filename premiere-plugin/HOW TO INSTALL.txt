@@ -1,0 +1,187 @@
+================================================================
+  INSIDE SUCCESS TV — AI CUT SHEET PLUGIN
+  Installation Guide for Editors
+================================================================
+
+WHAT IS THIS?
+-------------
+This plugin adds an AI-powered editing assistant directly inside
+Adobe Premiere Pro. It can:
+
+  • Generate a cut sheet from your interview audio in minutes
+  • Automatically apply cuts to your multicam timeline
+  • Suggest edit points based on camera angles and pacing
+  • Detect and mark silences in any clip
+  • Apply all cuts from a cut sheet with one click
+
+You do NOT need to know how to code. Just follow the steps below.
+
+
+----------------------------------------------------------------
+  STEP 1 — INSTALL THE PLUGIN (Windows)
+----------------------------------------------------------------
+
+1. Right-click the file called  install.bat
+2. Choose "Run as administrator"
+   (If Windows asks "Do you want to allow this app to make
+   changes?" — click YES)
+
+3. A black window will open and run automatically.
+   Wait until it says "Installation Complete!"
+
+4. Press any key to close the window.
+
+5. FULLY CLOSE and REOPEN Adobe Premiere Pro.
+   (Don't just minimize it — actually quit and restart.)
+
+6. In Premiere Pro, go to:
+      Window  →  Extensions  →  "Inside Success TV — Cut Sheet"
+
+   The panel will appear. You're almost done!
+
+
+----------------------------------------------------------------
+  STEP 1 — INSTALL THE PLUGIN (Mac)
+----------------------------------------------------------------
+
+1. Open Terminal
+   (Press Cmd + Space, type "Terminal", press Enter)
+
+2. Type this command and press Enter:
+      bash /path/to/install.sh
+
+   Or just drag the install.sh file into the Terminal window
+   after typing "bash " (with a space), then press Enter.
+
+3. Restart Adobe Premiere Pro.
+
+4. Window → Extensions → "Inside Success TV — Cut Sheet"
+
+
+----------------------------------------------------------------
+  STEP 2 — ENTER YOUR BACKEND URL
+----------------------------------------------------------------
+
+When the panel opens for the first time, you'll see a
+"Backend" section at the top.
+
+1. Type in the URL your team lead gave you.
+   It looks something like:
+      https://istv-pipeline.onrender.com
+   or
+      http://192.168.1.10:8000  (if it's on your local network)
+
+2. Click  SAVE
+
+3. Click  TEST CONNECTION
+   You should see "Backend online" in green.
+   If you see an error, double-check the URL with your team lead.
+
+
+----------------------------------------------------------------
+  STEP 3 — YOU'RE READY!
+----------------------------------------------------------------
+
+The plugin is now fully set up. Here's a quick overview
+of what each section does:
+
+  1 — Audio File
+      Browse for your raw interview audio file and upload it.
+      The system will transcribe it automatically.
+
+  2 — Transcript
+      Shows the transcription status. Takes 2-10 minutes
+      depending on the length of your audio.
+
+  3 — Generate Cut Sheet
+      Pick your documentary format (12-15 min, 15 min, etc.)
+      and click "Generate Cut Sheet". Claude AI will analyze
+      the transcript and create a full editorial cut sheet.
+
+  4 — Import to Premiere Pro
+      Imports an XML timeline based on the cut sheet directly
+      into your open Premiere Pro project.
+
+  5 — Apply Cut Sheet to Timeline
+      Paste in any cut sheet text and the plugin reads all
+      the [IP @ timestamps] and applies razor cuts to your
+      synced multicam timeline automatically.
+
+  Multicam AI Edit
+      Scans your open sequence, sends it to Claude, and gets
+      suggested cut points. You approve or reject each one,
+      then apply with one click.
+
+  Edit Selected Clip
+      Click on a clip in your timeline, then click
+      "Get Selected Clip" here. The plugin can detect silences
+      and help you clean up individual clips.
+
+
+----------------------------------------------------------------
+  HOW UPDATES WORK (Nothing you need to do!)
+----------------------------------------------------------------
+
+When your team lead pushes an update, you'll see a blue banner
+at the top of the plugin that says:
+
+  "Plugin update available — click to install"
+
+Just click  UPDATE NOW  and wait about 10 seconds.
+Then press F5 (or close and reopen the panel).
+
+That's it. No downloading a new ZIP. No re-running install.bat.
+Updates happen automatically through the internet.
+
+
+----------------------------------------------------------------
+  TROUBLESHOOTING
+----------------------------------------------------------------
+
+PROBLEM: I don't see the plugin in Window → Extensions
+FIX: Re-run install.bat as Administrator, then fully restart
+     Premiere Pro. Make sure you close it completely.
+
+PROBLEM: "Backend unreachable" error
+FIX: Check the URL in the Backend field. Make sure you have
+     internet access. Contact your team lead for the correct URL.
+
+PROBLEM: "No active sequence" when I try to scan
+FIX: Click on a sequence tab in Premiere Pro to make it the
+     active sequence, then try again.
+
+PROBLEM: The cuts aren't applying to my timeline
+FIX: Use "Markers Only" first to preview where the cuts would go.
+     Some Premiere versions have restrictions on razor cuts via
+     scripts. If markers work but cuts don't, apply the cuts
+     manually using the markers as guides.
+
+PROBLEM: The panel is blank / white
+FIX: In Chrome, go to http://localhost:7777 to open the debug
+     console. Or try closing and reopening the panel.
+
+PROBLEM: CSInterface.js is missing
+FIX: The installer tries to download it automatically. If it
+     failed, download it manually from:
+     https://github.com/Adobe-CEP/CEP-Resources
+     (click CEP_12.x → CSInterface.js → Download raw file)
+     Save it inside your plugin folder.
+
+PROBLEM: "No transcript available" when generating cut sheet
+FIX: You need to upload and transcribe your audio file first
+     (Steps 1 and 2 in the panel). The transcript must be
+     ready before you can generate a cut sheet.
+
+
+----------------------------------------------------------------
+  NEED HELP?
+----------------------------------------------------------------
+
+Contact your team lead with:
+  - A screenshot of the error message
+  - What you were trying to do when it happened
+  - Your Premiere Pro version (Help → About Adobe Premiere Pro)
+
+================================================================
+  Inside Success TV — AI Production Pipeline
+================================================================

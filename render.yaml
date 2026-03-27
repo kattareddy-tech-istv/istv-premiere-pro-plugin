@@ -29,8 +29,6 @@ services:
         value: "6"
       - key: FILE_MAX_AGE_HOURS
         value: "24"
-      - key: APP_VERSION
-        value: "2.1.0"
       - key: COMPRESS_AUDIO_ABOVE_MB
         value: "200"
       - key: FFMPEG_TIMEOUT_SECONDS

@@ -3,10 +3,10 @@ import json
 import logging
 import random
 
-import google.generativeai as genai
+import aiofiles
 
 from ..config import (
-    GEMINI_API_KEY, PEXELS_API_KEY, BROLL_DIR, TRANSCRIPTS_DIR, PROMPTS_DIR,
+    PEXELS_API_KEY, BROLL_DIR, TRANSCRIPTS_DIR, PROMPTS_DIR,
 )
 from .. import clients
 from .ai import PRICING, _split_prompt_transcript
@@ -112,12 +112,8 @@ async def _generate_broll_openai(transcript_text: str, model: str, prompt_templa
 
 
 async def _generate_broll_gemini(transcript_text: str, model: str, prompt_template: str) -> dict:
-    genai.configure(api_key=GEMINI_API_KEY)
     output_limit = 65536 if "pro" in model else 8192
-    gmodel = genai.GenerativeModel(
-        model,
-        generation_config=genai.types.GenerationConfig(max_output_tokens=output_limit),
-    )
+    gmodel = clients.get_gemini_model(model, output_limit)
     full_prompt = prompt_template.replace("{transcript}", transcript_text)
 
     async def _call():
@@ -192,8 +188,8 @@ async def generate_broll_suggestions(
     if not transcript_path.exists():
         raise FileNotFoundError(f"Transcript '{transcript_job_id}' not found")
 
-    with open(transcript_path, encoding="utf-8") as f:
-        transcript_data = json.load(f)
+    async with aiofiles.open(transcript_path, encoding="utf-8") as f:
+        transcript_data = json.loads(await f.read())
 
     transcript_text = _format_transcript_for_broll(transcript_data)
 
@@ -229,7 +225,7 @@ async def generate_broll_suggestions(
     }
 
     broll_path = BROLL_DIR / f"{transcript_job_id}_broll.json"
-    with open(broll_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, indent=2, ensure_ascii=False)
+    async with aiofiles.open(broll_path, "w", encoding="utf-8") as f:
+        await f.write(json.dumps(result, indent=2, ensure_ascii=False))
 
     return result

@@ -17,6 +17,7 @@ import {
   compressAudio,
   startTranscription,
   checkTranscriptionStatus,
+  waitForTranscriptionSSE,
   getTranscriptResult,
   generateCutSheet,
   importTranscript,
@@ -232,14 +233,23 @@ export default function App() {
       const { job_id } = await startTranscription(compressed.file_id);
       setJobId(job_id);
 
-      let jobStatus = "in_progress";
-      while (jobStatus === "in_progress") {
-        await new Promise((r) => setTimeout(r, 3000));
-        const check = await checkTranscriptionStatus(job_id);
-        jobStatus = check.status;
-        setStatus(`Transcription: ${jobStatus}...`);
-        if (jobStatus === "transcribed" || jobStatus === "completed") break;
-        if (jobStatus === "failed") throw new Error("Rev AI transcription failed");
+      try {
+        await waitForTranscriptionSSE(job_id, (s) => setStatus(`Transcription: ${s}...`));
+      } catch (sseErr) {
+        if (sseErr.message === "SSE_CONNECTION_FAILED" || sseErr.message === "SSE_UNSUPPORTED") {
+          // Fallback: original polling at 5 s interval
+          let jobStatus = "in_progress";
+          while (jobStatus === "in_progress") {
+            await new Promise((r) => setTimeout(r, 5000));
+            const check = await checkTranscriptionStatus(job_id);
+            jobStatus = check.status;
+            setStatus(`Transcription: ${jobStatus}...`);
+            if (jobStatus === "transcribed" || jobStatus === "completed") break;
+            if (jobStatus === "failed") throw new Error("Rev AI transcription failed");
+          }
+        } else {
+          throw sseErr;
+        }
       }
 
       setStatus("Fetching transcript...");

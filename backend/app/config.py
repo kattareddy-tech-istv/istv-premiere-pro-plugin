@@ -8,12 +8,11 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BASE_DIR.parent
 
-# Default cut-sheet prompt: editable at repository root (see DOCUMENTARY_CUT_SHEET_PROMPT.txt).
-_repo_prompt = REPO_ROOT / "DOCUMENTARY_CUT_SHEET_PROMPT.txt"
-_backend_prompt = BASE_DIR / "DOCUMENTARY_CUT_SHEET_PROMPT.txt"
-_default_prompt_path = (
-    _repo_prompt if _repo_prompt.exists() else _backend_prompt
-)
+# Default cut-sheet prompt lives in backend/prompts/.
+# Falls back to repo root for backwards-compatibility with older deployments.
+_bundled_prompt   = BASE_DIR / "prompts" / "DOCUMENTARY_CUT_SHEET_PROMPT.txt"
+_repo_root_prompt = REPO_ROOT / "DOCUMENTARY_CUT_SHEET_PROMPT.txt"
+_default_prompt_path = _bundled_prompt if _bundled_prompt.exists() else _repo_root_prompt
 CUTSHEET_PROMPT_FILE = Path(
     os.getenv("CUTSHEET_PROMPT_FILE", str(_default_prompt_path))
 )

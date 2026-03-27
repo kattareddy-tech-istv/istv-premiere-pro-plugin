@@ -1,14 +1,15 @@
 import asyncio
 import logging
+import shutil
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import CORS_ORIGINS, APP_VERSION
+from .config import CORS_ORIGINS, APP_VERSION, DATA_DIR
 from .clients import init_clients, close_clients
 from .cleanup import cleanup_loop
-from .routers import upload, transcribe, generate, broll
+from .routers import upload, transcribe, generate, broll, multicam, update
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,8 +59,24 @@ app.include_router(upload.router)
 app.include_router(transcribe.router)
 app.include_router(generate.router)
 app.include_router(broll.router)
+app.include_router(multicam.router)
+app.include_router(update.router)
 
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": APP_VERSION, "service": "Inside Success TV Pipeline"}
+    from . import clients as _clients
+    disk = shutil.disk_usage(str(DATA_DIR))
+    disk_free_mb = disk.free // (1024 * 1024)
+    clients_ok = {
+        "http": _clients._http_client is not None,
+        "anthropic": _clients._anthropic_client is not None,
+    }
+    all_ok = disk_free_mb > 100 and clients_ok["http"]
+    return {
+        "status": "ok" if all_ok else "degraded",
+        "version": APP_VERSION,
+        "service": "Inside Success TV Pipeline",
+        "disk_free_mb": disk_free_mb,
+        "clients": clients_ok,
+    }

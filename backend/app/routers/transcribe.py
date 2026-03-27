@@ -1,12 +1,16 @@
+import asyncio
 import json
 import logging
 import traceback
 import uuid
 from typing import List, Any
 
-from fastapi import APIRouter, HTTPException
+import aiofiles
+
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
 
 from ..config import TRANSCRIPTS_DIR
 from ..services.audio import prepare_audio_for_transcription
@@ -76,13 +80,48 @@ async def check_status(job_id: str):
         raise HTTPException(500, str(e))
 
 
+@router.get("/stream/{job_id}")
+async def stream_status(job_id: str, request: Request):
+    """
+    SSE endpoint: polls Rev.ai internally every 5 s and pushes status events.
+    The client makes ONE persistent connection instead of many polling requests.
+
+    Events: {"status": "in_progress"|"transcribed"|"completed"|"failed"|"error"|"timeout", "job_id": "..."}
+    """
+    async def _gen():
+        POLL = 5        # seconds between Rev.ai checks
+        MAX = 7200      # 2-hour absolute ceiling
+        elapsed = 0
+        while elapsed < MAX:
+            if await request.is_disconnected():
+                break
+            try:
+                data = await get_job_status(job_id)
+            except RuntimeError as exc:
+                yield {"data": json.dumps({"status": "error", "message": str(exc), "job_id": job_id})}
+                return
+            status = data.get("status", "unknown")
+            yield {"data": json.dumps({
+                "status": status,
+                "job_id": job_id,
+                "duration_seconds": data.get("duration_seconds"),
+            })}
+            if status in ("transcribed", "completed", "failed"):
+                return
+            await asyncio.sleep(POLL)
+            elapsed += POLL
+        yield {"data": json.dumps({"status": "timeout", "job_id": job_id})}
+
+    return EventSourceResponse(_gen())
+
+
 @router.get("/result/{job_id}")
 async def get_result(job_id: str):
     """Fetch parsed transcript (cached on disk after first fetch)."""
     transcript_path = TRANSCRIPTS_DIR / f"{job_id}.json"
     if transcript_path.exists():
-        with open(transcript_path, encoding="utf-8") as f:
-            return json.load(f)
+        async with aiofiles.open(transcript_path, encoding="utf-8") as f:
+            return json.loads(await f.read())
 
     try:
         return await get_transcript(job_id)
@@ -203,8 +242,8 @@ async def import_transcript(request: ImportTranscriptRequest):
         TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
         transcript_path = TRANSCRIPTS_DIR / f"{job_id}.json"
         try:
-            with open(transcript_path, "w", encoding="utf-8") as f:
-                json.dump(result, f, indent=2, ensure_ascii=False)
+            async with aiofiles.open(transcript_path, "w", encoding="utf-8") as f:
+                await f.write(json.dumps(result, indent=2, ensure_ascii=False))
         except Exception as e:
             logger.error(f"Failed to save transcript file: {e}")
             raise HTTPException(500, f"Failed to save transcript: {str(e)}")

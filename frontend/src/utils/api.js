@@ -99,6 +99,52 @@ export async function checkTranscriptionStatus(jobId) {
   return r.json();
 }
 
+/**
+ * Wait for a Rev.ai transcription job using SSE.
+ * The server polls Rev internally; this client holds ONE connection instead of many.
+ *
+ * @param {string} jobId
+ * @param {(status: string) => void} [onStatusUpdate]
+ * @returns {Promise<string>} resolves with "transcribed" or "completed"
+ */
+export function waitForTranscriptionSSE(jobId, onStatusUpdate) {
+  return new Promise((resolve, reject) => {
+    const url = `${API}/transcribe/stream/${jobId}`;
+    let es;
+    const hardTimeout = setTimeout(() => {
+      es?.close();
+      reject(new Error("Transcription timed out after 3 hours"));
+    }, 3 * 60 * 60 * 1000);
+
+    try {
+      es = new EventSource(url);
+    } catch {
+      clearTimeout(hardTimeout);
+      reject(new Error("SSE_UNSUPPORTED"));
+      return;
+    }
+
+    es.onmessage = (event) => {
+      let data;
+      try { data = JSON.parse(event.data); } catch { return; }
+      const { status, message } = data;
+      onStatusUpdate?.(status);
+      if (status === "transcribed" || status === "completed") {
+        es.close(); clearTimeout(hardTimeout); resolve(status);
+      } else if (status === "failed" || status === "error" || status === "timeout") {
+        es.close(); clearTimeout(hardTimeout);
+        reject(new Error(message || `Transcription ${status}`));
+      }
+      // "in_progress" or "unknown" — keep listening
+    };
+
+    es.onerror = () => {
+      es.close(); clearTimeout(hardTimeout);
+      reject(new Error("SSE_CONNECTION_FAILED"));
+    };
+  });
+}
+
 export async function getTranscriptResult(jobId) {
   const r = await fetch(`${API}/transcribe/result/${jobId}`);
   if (!r.ok) throw new Error("Failed to fetch transcript");

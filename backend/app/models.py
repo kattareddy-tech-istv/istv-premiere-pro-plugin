@@ -74,6 +74,7 @@ class CutSheetRequest(BaseModel):
     provider: str
     model: str
     custom_prompt: Optional[str] = None
+    documentary_format: Optional[str] = "20_25min_vip"
 
 
 class CutSheetResponse(BaseModel):

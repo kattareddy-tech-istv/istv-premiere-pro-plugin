@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inside Success TV — Cut Sheet</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <!-- CEP framework (shipped with Premiere Pro) -->
+  <script src="CSInterface.js"></script>
+
+  <!-- Auto-update banner (hidden until a newer version is detected) -->
+  <div id="update-banner" style="display:none">
+    <span id="update-banner-text">Update available!</span>
+    <div style="display:flex;gap:4px;flex-shrink:0">
+      <button class="btn btn-sm update-banner-btn" id="btn-update-now">&#8593; Update Now</button>
+      <button class="btn btn-sm" id="btn-update-dismiss">&#10005;</button>
+    </div>
+  </div>
+
+  <div class="panel-header">
+    <span class="panel-title">&#9654; Inside Success TV</span>
+    <span id="stage-label">Idle</span>
+  </div>
+
+  <!-- Notice / Toast -->
+  <div id="notice" class="notice"></div>
+
+  <!-- Progress -->
+  <div class="progress-wrap">
+    <div id="progress-bar"></div>
+  </div>
+  <div id="progress-label"></div>
+
+  <!-- ── Backend URL ── -->
+  <div class="section">
+    <div class="section-header">Backend</div>
+    <div class="section-body">
+      <label for="backend-url">API URL</label>
+      <input type="url" id="backend-url" value="http://localhost:8000" placeholder="http://localhost:8000">
+      <div class="btn-row">
+        <button class="btn btn-sm" id="btn-save-url">Save</button>
+        <button class="btn btn-sm" id="btn-check-health">Test Connection</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Audio Upload ── -->
+  <div class="section">
+    <div class="section-header">1 — Audio File</div>
+    <div class="section-body">
+      <div class="btn-row">
+        <button class="btn" id="btn-browse">&#128193; Browse…</button>
+        <!-- Fallback HTML picker (hidden) -->
+        <input type="file" id="file-input" accept=".mp3,.wav,.m4a,.aac,.mp4,.mov,.mxf,.aif,.aiff" style="display:none">
+        <input type="hidden" id="file-path-hidden">
+      </div>
+      <div id="file-name">No file selected</div>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-primary btn-full" id="btn-upload" disabled>
+          &#8593; Upload &amp; Transcribe
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Transcript Status ── -->
+  <div class="section">
+    <div class="section-header">2 — Transcript</div>
+    <div class="section-body">
+      <div id="transcript-summary">Upload an audio file to begin.</div>
+    </div>
+  </div>
+
+  <!-- ── Generate Cut Sheet ── -->
+  <div class="section">
+    <div class="section-header">3 — Generate Cut Sheet</div>
+    <div class="section-body">
+      <label for="doc-format-select">Documentary Format</label>
+      <select id="doc-format-select">
+        <option value="12_15min">12-15 min (Punchy Edit)</option>
+        <option value="15min">15 min (Standard)</option>
+        <option value="16_22min">16-22 min (Extended)</option>
+        <option value="23_25min">23-25 min (Full Documentary)</option>
+        <option value="20_25min_vip" selected>20-25 min (VIP Documentary)</option>
+      </select>
+
+      <label for="model-select">AI Model</label>
+      <select id="model-select"></select>
+
+      <label for="custom-prompt">Custom instructions (optional)</label>
+      <textarea id="custom-prompt" placeholder="e.g. Focus on the segment about climate change. Include chapter markers every 5 minutes."></textarea>
+
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-primary btn-full" id="btn-generate" disabled>
+          &#9889; Generate Cut Sheet
+        </button>
+      </div>
+      <div id="cost-info"></div>
+    </div>
+  </div>
+
+  <!-- ── Cut Sheet Output ── -->
+  <div id="cutsheet-section" class="section">
+    <div class="section-header">Cut Sheet</div>
+    <div class="section-body">
+      <pre id="cutsheet-output"></pre>
+      <div class="btn-row">
+        <button class="btn btn-success btn-sm" id="btn-save-cutsheet">&#128190; Save .txt</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Premiere Pro Import ── -->
+  <div class="section">
+    <div class="section-header">4 — Import to Premiere Pro</div>
+    <div class="section-body">
+      <div id="xml-status">Generate a cut sheet first.</div>
+      <div class="btn-row" style="margin-top:6px">
+        <button class="btn btn-success" id="btn-import-xml" disabled>
+          &#8681; Import XML Timeline
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Apply Cut Sheet to Timeline ── -->
+  <div class="section">
+    <div class="section-header">5 &#9986; Apply Cut Sheet to Timeline</div>
+    <div class="section-body">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">
+        Paste a generated cut sheet. The plugin reads the timestamps and can apply all cuts to your synced multicam timeline in one click.
+      </div>
+      <label for="cutsheet-paste-input">Paste cut sheet text:</label>
+      <textarea id="cutsheet-paste-input" style="min-height:90px" placeholder="Paste the full cut sheet here (must contain [IP @ HH:MM:SS-HH:MM:SS] timestamps)..."></textarea>
+      <div class="btn-row" style="margin-top:6px">
+        <button class="btn btn-primary btn-full" id="btn-parse-cutsheet">&#128269; Parse Cut Sheet</button>
+      </div>
+
+      <div id="cs-parse-result" style="display:none;margin-top:8px">
+        <div id="cs-clips-summary" style="font-size:11px;color:var(--info);padding:5px 8px;background:#1a2a3a;border-radius:var(--radius);margin-bottom:6px"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <span id="cs-clips-count" style="font-size:11px;color:var(--text-muted)">0 clips</span>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm" id="cs-select-all-btn">All</button>
+            <button class="btn btn-sm" id="cs-select-none-btn">None</button>
+          </div>
+        </div>
+        <div id="cs-clips-list"></div>
+        <div class="btn-row" style="margin-top:8px">
+          <button class="btn btn-success" id="btn-apply-cutsheet-cuts" style="flex:1">
+            &#9986; Auto Cuts
+          </button>
+          <button class="btn" id="btn-cutsheet-markers-only" style="flex:1">
+            &#128204; Markers Only
+          </button>
+        </div>
+        <div id="cs-apply-status" style="font-size:11px;color:var(--success);margin-top:5px;min-height:14px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Multicam AI Edit ── -->
+  <div class="section">
+    <div class="section-header">&#127909; Multicam AI Edit</div>
+    <div class="section-body">
+
+      <!-- Step 1: Scan sequence -->
+      <div class="btn-row" style="margin-bottom:6px">
+        <button class="btn btn-full" id="btn-scan-multicam">&#128269; Scan Active Sequence</button>
+      </div>
+      <div id="multicam-seq-info">Open a sequence in Premiere Pro, then click Scan.</div>
+
+      <!-- AI model selector for multicam -->
+      <label for="multicam-model-select" style="margin-top:8px">AI Model</label>
+      <select id="multicam-model-select">
+        <option value="claude-opus-4-6">Claude Opus 4.6 (Best)</option>
+        <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (Faster)</option>
+        <option value="claude-haiku-4-5">Claude Haiku 4.5 (Fastest)</option>
+      </select>
+
+      <label for="multicam-instructions">Editor instructions (optional)</label>
+      <textarea id="multicam-instructions" placeholder="e.g. Focus on the interview sections. Prefer wide shots. Remove dead air over 3 seconds."></textarea>
+
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-primary btn-full" id="btn-analyze-multicam" disabled>
+          &#9889; Analyze with Claude
+        </button>
+      </div>
+
+      <div id="multicam-cost-info" style="font-size:11px;color:var(--text-muted);min-height:16px;margin-top:4px"></div>
+    </div>
+  </div>
+
+  <!-- ── AI Suggestions ── -->
+  <div id="suggestions-section" class="section">
+    <div class="section-header">&#10003; Edit Suggestions</div>
+    <div class="section-body">
+
+      <div id="multicam-summary"></div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span id="suggestions-count" style="font-size:11px;color:var(--text-muted)">0 suggestions</span>
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-sm" id="select-all-btn">All</button>
+          <button class="btn btn-sm" id="select-none-btn">None</button>
+        </div>
+      </div>
+
+      <div id="suggestions-list"></div>
+
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-success" id="btn-apply-cuts" disabled style="flex:1">
+          &#9986; Apply Selected Cuts
+        </button>
+        <button class="btn" id="btn-markers-only" disabled style="flex:1">
+          &#128204; Markers Only
+        </button>
+      </div>
+      <div id="apply-status"></div>
+    </div>
+  </div>
+
+  <!-- ── Edit Selected Clip (Semi-Assisted) ── -->
+  <div class="section">
+    <div class="section-header">&#9999; Edit Selected Clip</div>
+    <div class="section-body">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">
+        Select a clip in the Premiere timeline, then get it here to detect and remove silences.
+      </div>
+      <div class="btn-row" style="margin-bottom:6px">
+        <button class="btn btn-full" id="btn-get-selected-clip">&#128196; Get Selected Clip</button>
+      </div>
+
+      <div id="selected-clip-info" style="display:none">
+        <div style="background:var(--surface2);border-radius:var(--radius);padding:7px 9px;margin-bottom:8px">
+          <div id="selected-clip-name" style="font-weight:600;font-size:11px;color:var(--text);margin-bottom:2px"></div>
+          <div id="selected-clip-tc" style="font-family:monospace;font-size:11px;color:var(--accent)"></div>
+        </div>
+
+        <label for="silence-job-id">Transcript Job ID</label>
+        <input type="text" id="silence-job-id" placeholder="Auto-filled from session or paste manually">
+        <div style="font-size:10px;color:var(--text-muted);margin-top:2px;margin-bottom:8px">
+          Uses the transcript to find silence gaps. Runs transcription first if you haven't already.
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-full" id="btn-detect-silences">&#128266; Detect Silences in Clip</button>
+        </div>
+
+        <div id="silence-result" style="display:none;margin-top:8px">
+          <div id="silence-summary" style="font-size:11px;color:var(--info);padding:5px 8px;background:#1a2a3a;border-radius:var(--radius);margin-bottom:6px"></div>
+          <div id="silence-list"></div>
+          <div class="btn-row" style="margin-top:6px">
+            <button class="btn btn-danger btn-sm" id="btn-remove-silences" style="flex:1">
+              &#9986; Cut Silences
+            </button>
+            <button class="btn btn-sm" id="btn-mark-silences" style="flex:1">
+              &#128204; Mark Only
+            </button>
+          </div>
+          <div id="silence-apply-status" style="font-size:11px;color:var(--success);margin-top:5px;min-height:14px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Reset ── -->
+  <div style="margin-top:4px">
+    <button class="btn btn-danger btn-full btn-sm" id="btn-reset">&#8635; Reset Pipeline</button>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

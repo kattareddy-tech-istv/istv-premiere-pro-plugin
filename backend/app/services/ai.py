@@ -4,9 +4,8 @@ import random
 
 import anthropic
 import openai
-import google.generativeai as genai
 
-from ..config import GEMINI_API_KEY, PROMPTS_DIR, CUTSHEET_PROMPT_FILE
+from ..config import PROMPTS_DIR, CUTSHEET_PROMPT_FILE
 from .. import clients
 
 logger = logging.getLogger(__name__)
@@ -178,12 +177,8 @@ async def _generate_openai(transcript_text: str, model: str, prompt: str) -> dic
 # ── Google Gemini ────────────────────────────────────────────────────────────
 
 async def _generate_gemini(transcript_text: str, model: str, prompt: str) -> dict:
-    genai.configure(api_key=GEMINI_API_KEY)
     output_limit = 65536 if "pro" in model else 8192
-    gmodel = genai.GenerativeModel(
-        model,
-        generation_config=genai.types.GenerationConfig(max_output_tokens=output_limit),
-    )
+    gmodel = clients.get_gemini_model(model, output_limit)
     full_prompt = prompt.replace("{transcript}", transcript_text)
 
     async def _call():
@@ -232,8 +227,15 @@ async def generate_cutsheet(
     provider: str,
     model: str,
     custom_prompt: str | None = None,
+    documentary_format: str | None = None,
 ) -> dict:
-    prompt = custom_prompt or load_cutsheet_prompt()
+    base_prompt = custom_prompt or load_cutsheet_prompt()
+    # Prepend format header when using the default prompt (not a custom one)
+    if documentary_format and not custom_prompt:
+        from .doc_formats import get_format_header
+        prompt = get_format_header(documentary_format) + base_prompt
+    else:
+        prompt = base_prompt
     if "{transcript}" not in prompt:
         prompt += "\n\nTRANSCRIPT:\n{transcript}"
 

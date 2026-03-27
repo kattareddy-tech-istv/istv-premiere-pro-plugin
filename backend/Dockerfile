@@ -10,7 +10,7 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ .
-COPY DOCUMENTARY_CUT_SHEET_PROMPT.txt .
+COPY premiere-plugin/ /premiere-plugin/
 
 ENV DATA_DIR=/data
 RUN mkdir -p /data/uploads /data/chunks /data/compressed \

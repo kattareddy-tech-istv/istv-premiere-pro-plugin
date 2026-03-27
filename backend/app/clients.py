@@ -12,10 +12,12 @@ import logging
 import httpx
 import anthropic
 import openai
+import google.generativeai as genai
 
 from .config import (
     ANTHROPIC_API_KEY,
     OPENAI_API_KEY,
+    GEMINI_API_KEY,
     MAX_CONCURRENT_REVAI,
     MAX_CONCURRENT_AI,
     MAX_CONCURRENT_FFMPEG,
@@ -27,6 +29,7 @@ logger = logging.getLogger(__name__)
 _http_client: httpx.AsyncClient | None = None
 _anthropic_client: anthropic.AsyncAnthropic | None = None
 _openai_client: openai.AsyncOpenAI | None = None
+_gemini_configured: bool = False
 
 # ── Semaphores ───────────────────────────────────────────────────────────────
 revai_sem: asyncio.Semaphore | None = None
@@ -37,7 +40,7 @@ ffmpeg_sem: asyncio.Semaphore | None = None
 # ── Lifecycle ────────────────────────────────────────────────────────────────
 
 def init_clients() -> None:
-    global _http_client, _anthropic_client, _openai_client
+    global _http_client, _anthropic_client, _openai_client, _gemini_configured
     global revai_sem, ai_sem, ffmpeg_sem
 
     _http_client = httpx.AsyncClient(
@@ -56,6 +59,11 @@ def init_clients() -> None:
             api_key=OPENAI_API_KEY,
             max_retries=2,
         )
+
+    if GEMINI_API_KEY:
+        genai.configure(api_key=GEMINI_API_KEY)
+        _gemini_configured = True
+        logger.info("Gemini client configured")
 
     revai_sem = asyncio.Semaphore(MAX_CONCURRENT_REVAI)
     ai_sem = asyncio.Semaphore(MAX_CONCURRENT_AI)
@@ -105,3 +113,14 @@ def get_openai() -> openai.AsyncOpenAI:
     if _openai_client is None:
         raise RuntimeError("OpenAI client not initialised — check OPENAI_API_KEY")
     return _openai_client
+
+
+def get_gemini_model(model_name: str, max_output_tokens: int) -> "genai.GenerativeModel":
+    """Return a GenerativeModel for the given model name.
+    genai.configure() is already called once at startup."""
+    if not _gemini_configured:
+        raise RuntimeError("Gemini client not configured — check GEMINI_API_KEY")
+    return genai.GenerativeModel(
+        model_name,
+        generation_config=genai.types.GenerationConfig(max_output_tokens=max_output_tokens),
+    )

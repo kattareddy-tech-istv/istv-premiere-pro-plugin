@@ -3,6 +3,8 @@ import logging
 import mimetypes
 from pathlib import Path
 
+import aiofiles
+
 from ..config import REV_AI_TOKEN, TRANSCRIPTS_DIR, COMPRESSED_DIR
 from .. import clients
 
@@ -37,17 +39,19 @@ async def submit_transcription(file_id: str) -> str:
     if not mime:
         mime = "application/octet-stream"
 
+    async with aiofiles.open(compressed_path, "rb") as f:
+        file_bytes = await f.read()
+
     async with clients.revai_sem:
         http = clients.get_http()
-        with open(compressed_path, "rb") as f:
-            files = {"media": (compressed_path.name, f, mime)}
-            data = {"options": options}
-            response = await http.post(
-                f"{REV_AI_BASE}/jobs",
-                headers=headers,
-                files=files,
-                data=data,
-            )
+        files = {"media": (compressed_path.name, file_bytes, mime)}
+        data = {"options": options}
+        response = await http.post(
+            f"{REV_AI_BASE}/jobs",
+            headers=headers,
+            files=files,
+            data=data,
+        )
 
     if response.status_code not in (200, 201):
         raise RuntimeError(f"Rev AI submit error ({response.status_code}): {response.text[:300]}")
@@ -162,7 +166,7 @@ async def get_transcript(job_id: str) -> dict:
     }
 
     transcript_path = TRANSCRIPTS_DIR / f"{job_id}.json"
-    with open(transcript_path, "w", encoding="utf-8") as f:
-        json.dump(result, f, indent=2, ensure_ascii=False)
+    async with aiofiles.open(transcript_path, "w", encoding="utf-8") as f:
+        await f.write(json.dumps(result, indent=2, ensure_ascii=False))
 
     return result
