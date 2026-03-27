@@ -16,6 +16,10 @@ To push an update to editors: bump APP_VERSION in config.py (or set the
 APP_VERSION env var on your server), then redeploy. That's it.
 """
 
+import asyncio
+
+import aiofiles
+
 from fastapi import APIRouter
 
 from ..config import APP_VERSION, REPO_ROOT
@@ -55,7 +59,8 @@ async def get_plugin_update():
         path = _PLUGIN_DIR.joinpath(*rel.split("/"))
         if path.exists():
             try:
-                files[rel] = path.read_text(encoding="utf-8")
+                async with aiofiles.open(path, encoding="utf-8") as f:
+                    files[rel] = await f.read()
             except OSError:
                 pass  # Skip unreadable files silently
     return {"version": APP_VERSION, "files": files}

@@ -15,6 +15,7 @@ var state = {
   jobId: null,
   transcript: null,
   cutSheet: null,
+  xmlContent: null,
   xmlDownloadUrl: null,
   xmlFilename: null,
   models: [],
@@ -202,10 +203,12 @@ function onUpload() {
       setStage("compressing");
       return API.compressAudio(state.fileId);
     })
-    .then(function () {
+    .then(function (compressResult) {
+      // Use the compressed file_id (may differ from original upload id)
+      var compressedId = (compressResult && compressResult.file_id) ? compressResult.file_id : state.fileId;
       updateProgress(100, "Compression done. Starting transcription…");
       setStage("transcribing");
-      return API.startTranscription(state.fileId);
+      return API.startTranscription(compressedId);
     })
     .then(function (r) {
       state.jobId = r.job_id;
@@ -256,17 +259,26 @@ function pollStatus() {
 
 function onTranscriptReady(r) {
   state.transcript = r;
-  // Show a summary of the transcript
-  var monologues = r.monologues || [];
-  var totalWords = monologues.reduce(function (acc, m) {
-    return acc + (m.elements || []).filter(function (e) { return e.type === "text"; }).length;
-  }, 0);
-  var speakers = [];
-  monologues.forEach(function (m) {
-    if (speakers.indexOf(m.speaker) === -1) speakers.push(m.speaker);
-  });
+  var totalWords = 0, speakerSet = {};
+
+  // Format 1: our sentences format (imported or processed transcripts)
+  if (r.sentences && r.sentences.length) {
+    totalWords = r.word_count || r.sentences.reduce(function (acc, s) {
+      return acc + (s.text ? s.text.split(/\s+/).length : 0);
+    }, 0);
+    r.sentences.forEach(function (s) { speakerSet[s.speaker] = true; });
+  }
+  // Format 2: raw Rev.ai monologue format
+  else if (r.monologues && r.monologues.length) {
+    r.monologues.forEach(function (m) {
+      totalWords += (m.elements || []).filter(function (e) { return e.type === "text"; }).length;
+      speakerSet[m.speaker] = true;
+    });
+  }
+
+  var speakers = Object.keys(speakerSet).length;
   document.getElementById("transcript-summary").textContent =
-    "Transcript ready — " + totalWords + " words, " + speakers.length + " speaker(s).";
+    "Transcript ready — " + totalWords + " words, " + speakers + " speaker(s).";
   setStage("ready");
   showNotice("Transcription complete. Ready to generate cut sheet.", "success");
 }
@@ -325,16 +337,15 @@ function onGenerate() {
 function generateXML(cutsheetId) {
   API.generatePremiereXML(cutsheetId, {})
     .then(function (r) {
-      if (r.download_url || r.xml_url) {
-        state.xmlDownloadUrl = r.download_url || r.xml_url;
-        state.xmlFilename = r.filename || (cutsheetId + "_premiere.xml");
-        document.getElementById("btn-import-xml").disabled = false;
-        document.getElementById("xml-status").textContent = "Premiere XML ready: " + state.xmlFilename;
-      }
+      // r.xml is the raw XML string, r.filename is the suggested filename
+      state.xmlContent = r.xml;
+      state.xmlFilename = r.filename || (cutsheetId + "_premiere.xml");
+      document.getElementById("btn-import-xml").disabled = false;
+      document.getElementById("xml-status").textContent = "Premiere XML ready: " + state.xmlFilename;
     })
     .catch(function () {
-      // XML generation is optional — don't show an error
-      document.getElementById("xml-status").textContent = "XML generation not available.";
+      // XML generation is optional — don't show an error to the user
+      document.getElementById("xml-status").textContent = "XML generation not available for this cut sheet.";
     });
 }
 
@@ -342,25 +353,43 @@ function generateXML(cutsheetId) {
    Import XML into Premiere Pro
 ───────────────────────────────────────── */
 function onImportXML() {
-  if (!state.xmlDownloadUrl) {
+  if (!state.xmlContent) {
     return showNotice("No XML available to import.", "error");
   }
 
-  // First get the project path via ExtendScript
   cs.evalScript("getProjectPath()", function (result) {
     try {
       var r = JSON.parse(result);
-      var savePath;
-      if (r.success && r.path) {
-        savePath = r.path.replace(/\\/g, "/") + state.xmlFilename;
-      } else {
-        savePath = null;
+      if (!r.success || !r.path) {
+        return showNotice("Open a Premiere Pro project first.", "error");
       }
+      var savePath = r.path.replace(/\\/g, "/") + state.xmlFilename;
 
-      // Download the XML from the backend and save it, then import
-      downloadAndImportXML(API.getBaseUrl() + state.xmlDownloadUrl, savePath);
+      // Write XML content directly (already in memory — no extra download needed)
+      var escaped = state.xmlContent
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, "\\n")
+        .replace(/\r/g, "");
+
+      cs.evalScript('writeTextFile("' + savePath.replace(/\//g, "\\") + '", "' + escaped + '")', function (writeResult) {
+        try {
+          var wr = JSON.parse(writeResult);
+          if (wr.success) {
+            cs.evalScript('importXMLToProject("' + savePath.replace(/\//g, "\\") + '")', function (importResult) {
+              try {
+                var ir = JSON.parse(importResult);
+                if (ir.success) showNotice("XML imported into project successfully!", "success");
+                else showNotice("Import failed: " + ir.error, "error");
+              } catch (e2) { showNotice("Import error: " + e2.message, "error"); }
+            });
+          } else {
+            showNotice("Write failed: " + wr.error, "error");
+          }
+        } catch (e) { showNotice("Write error: " + e.message, "error"); }
+      });
     } catch (e) {
-      showNotice("Could not determine project path: " + e.message, "error");
+      showNotice("Could not get project path: " + e.message, "error");
     }
   });
 }
@@ -458,6 +487,7 @@ function onReset() {
   state.jobId = null;
   state.transcript = null;
   state.cutSheet = null;
+  state.xmlContent = null;
   state.xmlDownloadUrl = null;
   state.xmlFilename = null;
   document.getElementById("file-name").textContent = "No file selected";

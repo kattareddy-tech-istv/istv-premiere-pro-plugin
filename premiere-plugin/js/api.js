@@ -111,8 +111,25 @@ var API = (function () {
 
   /* ── Premiere XML ── */
 
-  function generatePremiereXML(cutsheetId, settings) {
-    return request("POST", "/api/generate/export-xml/" + cutsheetId, settings || {});
+  function generatePremiereXML(cutsheetId, settings, onDone) {
+    // export-xml returns a raw XML FileResponse, not JSON — use separate XHR
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open("POST", getBaseUrl() + "/api/generate/export-xml/" + cutsheetId, true);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.responseType = "text";
+      xhr.onload = function () {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve({ xml: xhr.responseText, filename: cutsheetId + "_premiere.xml" });
+        } else {
+          var msg = "XML export failed (HTTP " + xhr.status + ")";
+          try { var e = JSON.parse(xhr.responseText); msg = e.detail || msg; } catch (_) {}
+          reject(new Error(msg));
+        }
+      };
+      xhr.onerror = function () { reject(new Error("Network error during XML export")); };
+      xhr.send(JSON.stringify(settings || {}));
+    });
   }
 
   /* ── B-Roll ── */

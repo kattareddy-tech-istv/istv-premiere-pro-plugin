@@ -25,16 +25,19 @@ router = APIRouter(prefix="/api/generate", tags=["generate"])
 # ── Cut-sheet timestamp parsing helpers ──────────────────────────────────────
 
 # Matches [IP @ HH:MM:SS–HH:MM:SS] or [ALT @ HH:MM:SS-HH:MM:SS]
+# Also handles decimal seconds: HH:MM:SS.xx
 _CLIP_RE = re.compile(
-    r'\[(?P<type>IP|ALT)\s*@\s*(?P<in>\d{2}:\d{2}:\d{2})[\u2013\-](?P<out>\d{2}:\d{2}:\d{2})\]'
+    r'\[(?P<type>IP|ALT)\s*@\s*(?P<in>\d{2}:\d{2}:\d{2}(?:\.\d+)?)[\u2013\-](?P<out>\d{2}:\d{2}:\d{2}(?:\.\d+)?)\]'
 )
 _TONE_RE = re.compile(r'\[TONE:\s*([^\]]+)\]')
 
 
 def _tc_to_seconds(tc: str) -> float:
-    """Convert HH:MM:SS to seconds."""
-    h, m, s = tc.split(":")
-    return int(h) * 3600 + int(m) * 60 + int(s)
+    """Convert HH:MM:SS or HH:MM:SS.xx to seconds."""
+    parts = tc.split(":")
+    h, m = parts[0], parts[1]
+    s = parts[2]
+    return int(h) * 3600 + int(m) * 60 + float(s)
 
 
 def _is_section_header(line: str) -> bool:
