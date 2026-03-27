@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from pathlib import Path
 
@@ -85,7 +86,7 @@ async def upload_premiere_xml(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(422, f"Failed to parse Premiere XML: {e}")
 
-    save_parsed_xml(parsed, PREMIERE_XMLS_DIR)
+    await asyncio.to_thread(save_parsed_xml, parsed, PREMIERE_XMLS_DIR)
 
     return {
         "premiere_xml_id": parsed["premiere_xml_id"],

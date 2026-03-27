@@ -105,25 +105,34 @@ function onCheckHealth() {
 function loadModels() {
   API.getModels()
     .then(function (data) {
-      state.models = data.models || [];
+      // Backend returns nested: {anthropic: {models: [...]}, openai: {...}, gemini: {...}}
+      var flat = [];
+      ["anthropic", "openai", "gemini"].forEach(function (provider) {
+        if (data[provider] && data[provider].models) {
+          data[provider].models.forEach(function (m) {
+            flat.push({ id: m.id, name: m.name, provider: provider, recommended: m.recommended });
+          });
+        }
+      });
+      state.models = flat;
       var sel = document.getElementById("model-select");
       sel.innerHTML = "";
-      state.models.forEach(function (m) {
+      flat.forEach(function (m) {
         var opt = document.createElement("option");
         opt.value = m.id;
-        opt.textContent = m.name + " (" + m.provider + ")";
+        opt.textContent = m.name + " (" + m.provider + ")" + (m.recommended ? " ★" : "");
         sel.appendChild(opt);
       });
-      if (state.models.length) {
-        state.selectedModel = state.models[0].id;
-      }
+      // Default to recommended model
+      var rec = flat.filter(function (m) { return m.recommended; })[0] || flat[0];
+      if (rec) { sel.value = rec.id; state.selectedModel = rec.id; }
     })
     .catch(function () {
       // Backend not yet available — use defaults
       var defaults = [
-        { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", provider: "Anthropic" },
-        { id: "claude-opus-4-5", name: "Claude Opus 4.5", provider: "Anthropic" },
-        { id: "gpt-4o", name: "GPT-4o", provider: "OpenAI" }
+        { id: "claude-opus-4-6", name: "Claude Opus 4.6 (Most Intelligent)", provider: "anthropic" },
+        { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5 (Balanced)", provider: "anthropic" },
+        { id: "gpt-4o", name: "GPT-4o", provider: "openai" }
       ];
       var sel = document.getElementById("model-select");
       sel.innerHTML = "";
@@ -133,6 +142,7 @@ function loadModels() {
         opt.textContent = m.name + " (" + m.provider + ")";
         sel.appendChild(opt);
       });
+      state.models = defaults;
       state.selectedModel = defaults[0].id;
     });
 }
@@ -270,9 +280,16 @@ function onGenerate() {
   }
 
   var customPrompt = document.getElementById("custom-prompt").value.trim();
+  // Derive provider from selected model ID
+  var modelId = state.selectedModel || "claude-opus-4-6";
+  var provider = modelId.startsWith("claude") ? "anthropic"
+               : modelId.startsWith("gpt") ? "openai"
+               : modelId.startsWith("gemini") ? "gemini"
+               : "anthropic";
   var payload = {
-    job_id: state.jobId,
-    model: state.selectedModel,
+    transcript_job_id: state.jobId,
+    provider: provider,
+    model: modelId,
     custom_prompt: customPrompt || undefined,
     documentary_format: document.getElementById("doc-format-select").value || "20_25min_vip"
   };
@@ -282,7 +299,7 @@ function onGenerate() {
 
   API.generateCutSheet(payload)
     .then(function (r) {
-      state.cutSheet = r.cut_sheet || r.content || r;
+      state.cutSheet = r.cutsheet || r.cut_sheet || r.content || r;
       document.getElementById("cutsheet-output").textContent = state.cutSheet;
       document.getElementById("cutsheet-section").style.display = "block";
 
@@ -296,8 +313,8 @@ function onGenerate() {
       setStage("done");
       updateProgress(100, "Cut sheet generated!");
 
-      // Also generate Premiere XML
-      generateXML(payload);
+      // Also generate Premiere XML (cutsheet_id comes back in response)
+      if (r.cutsheet_id) { generateXML(r.cutsheet_id); }
     })
     .catch(function (e) {
       showNotice("Generation failed: " + e.message, "error");
@@ -305,12 +322,12 @@ function onGenerate() {
     });
 }
 
-function generateXML(basePayload) {
-  API.generatePremiereXML(basePayload)
+function generateXML(cutsheetId) {
+  API.generatePremiereXML(cutsheetId, {})
     .then(function (r) {
       if (r.download_url || r.xml_url) {
         state.xmlDownloadUrl = r.download_url || r.xml_url;
-        state.xmlFilename = r.filename || ("cutsheet_" + state.jobId + ".xml");
+        state.xmlFilename = r.filename || (cutsheetId + "_premiere.xml");
         document.getElementById("btn-import-xml").disabled = false;
         document.getElementById("xml-status").textContent = "Premiere XML ready: " + state.xmlFilename;
       }

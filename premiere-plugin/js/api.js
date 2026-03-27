@@ -111,8 +111,8 @@ var API = (function () {
 
   /* ── Premiere XML ── */
 
-  function generatePremiereXML(payload) {
-    return request("POST", "/api/generate/premiere-xml", payload);
+  function generatePremiereXML(cutsheetId, settings) {
+    return request("POST", "/api/generate/export-xml/" + cutsheetId, settings || {});
   }
 
   /* ── B-Roll ── */
