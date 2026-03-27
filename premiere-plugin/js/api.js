@@ -6,7 +6,7 @@
 var API = (function () {
   "use strict";
 
-  var _baseUrl = "http://localhost:8000";
+  var _baseUrl = "https://istv-premiere-pro-plugin.onrender.com";
 
   function setBaseUrl(url) {
     _baseUrl = url.replace(/\/$/, "");
